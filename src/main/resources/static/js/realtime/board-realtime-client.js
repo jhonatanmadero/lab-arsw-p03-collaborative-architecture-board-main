@@ -1,11 +1,35 @@
-export function createBoardRealtimeClient({onEvent=()=>{},onStatus=()=>{}}={}){
+/**
+ * BoardRealtimeClient — the ONLY module that knows about STOMP, topics and destinations.
+ *
+ *   SEND       /app/boards/{boardId}/events   publish a BoardEvent
+ *   SUBSCRIBE  /topic/boards/{boardId}        accepted events of that Board
+ *   SUBSCRIBE  /user/queue/errors             private rejections for this session
+ *
+ * It never touches BoardState or the DOM: it only hands parsed contracts to callbacks.
+ */
+export function createBoardRealtimeClient({onEvent=()=>{},onStatus=()=>{},onRejected=()=>{}}={}){
   let client=null;
-  let subscription=null;
+  let subscriptions=[];
   let currentBoardId=null;
+
+  const destinations={
+    send:boardId=>`/app/boards/${encodeURIComponent(boardId)}/events`,
+    topic:boardId=>`/topic/boards/${encodeURIComponent(boardId)}`,
+    errors:'/user/queue/errors'
+  };
 
   function webSocketUrl(){
     const protocol=location.protocol==='https:'?'wss':'ws';
     return `${protocol}://${location.host}/ws`;
+  }
+
+  function parse(message){
+    try { return JSON.parse(message.body); }
+    catch(error){ console.error('Invalid STOMP message body',error,message?.body); return null; }
+  }
+
+  function reset(){
+    subscriptions=[]; client=null; currentBoardId=null;
   }
 
   function connect(boardId){
@@ -13,37 +37,51 @@ export function createBoardRealtimeClient({onEvent=()=>{},onStatus=()=>{}}={}){
     if(!window.Stomp) return Promise.reject(new Error('STOMP client library was not loaded'));
     if(client?.connected && currentBoardId===boardId) return Promise.resolve();
 
-    return new Promise((resolve,reject)=>{
+    const previous=client?.connected ? disconnect() : Promise.resolve();
+    return previous.then(()=>new Promise((resolve,reject)=>{
       onStatus('connecting');
       const socket=new WebSocket(webSocketUrl());
       client=window.Stomp.over(socket);
       client.debug=()=>{};
+      let opened=false;
       client.connect({},()=>{
+        opened=true;
         currentBoardId=boardId;
-        subscription=client.subscribe(`/topic/boards/${boardId}`,message=>{
-          try { onEvent(JSON.parse(message.body)); }
-          catch(error){ console.error('Invalid board event',error); }
-        });
+        subscriptions=[
+          client.subscribe(destinations.topic(boardId),message=>{
+            const event=parse(message);
+            if(event) onEvent(event);
+          }),
+          client.subscribe(destinations.errors,message=>{
+            const rejection=parse(message);
+            if(rejection) onRejected(rejection);
+          })
+        ];
         onStatus('connected');
         resolve();
       },error=>{
-        onStatus('error');
-        reject(error instanceof Error?error:new Error(String(error)));
+        // Called on handshake failure AND on later connection loss.
+        reset();
+        onStatus(opened?'disconnected':'error');
+        if(!opened) reject(error instanceof Error?error:new Error(String(error?.headers?.message ?? error)));
       });
-    });
+    }));
   }
 
   function publish(event){
-    // TODO LAB-06: reject if disconnected, serialize the contract and SEND to
-    // /app/boards/{boardId}/events. Keep STOMP details inside this module.
-    throw new Error('TODO LAB-06: publish BoardEvent');
+    if(!client?.connected) throw new Error('Live channel is not connected');
+    if(!event?.boardId) throw new Error('BoardEvent.boardId is required');
+    if(event.boardId!==currentBoardId) throw new Error(`Event for board ${event.boardId} cannot be sent on session ${currentBoardId}`);
+    client.send(destinations.send(event.boardId),{'content-type':'application/json'},JSON.stringify(event));
   }
 
   function disconnect(){
     return new Promise(resolve=>{
-      subscription?.unsubscribe?.(); subscription=null;
-      if(client?.connected){ client.disconnect(()=>{ client=null; currentBoardId=null; onStatus('disconnected'); resolve(); }); }
-      else { client=null; currentBoardId=null; onStatus('disconnected'); resolve(); }
+      subscriptions.forEach(s=>s?.unsubscribe?.());
+      const active=client;
+      reset();
+      if(active?.connected){ active.disconnect(()=>{ onStatus('disconnected'); resolve(); }); }
+      else { onStatus('disconnected'); resolve(); }
     });
   }
 
