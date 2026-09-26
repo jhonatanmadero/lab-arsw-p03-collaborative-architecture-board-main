@@ -10,8 +10,24 @@ export function createBoardState(){
     board={...board,elements:board.elements.map(e=>e.id===next.id?structuredClone(next):e)};
   }
 
+  function upsertElement(next){
+    if(board.elements.some(e=>e.id===next.id)) replaceElement(next);
+    else board={...board,elements:[...board.elements,structuredClone(next)]};
+  }
+
+  function removeElement(id){
+    board={...board,elements:board.elements.filter(e=>e.id!==id && e.sourceId!==id && e.targetId!==id)};
+    // Forget UI references to anything that no longer exists.
+    const exists=x=>board.elements.some(e=>e.id===x);
+    if(selectedId && !exists(selectedId)) selectedId=null;
+    if(connectSourceId && !exists(connectSourceId)) connectSourceId=null;
+  }
+
   return {
-    snapshot(){ return structuredClone({board,selectedId,connectSourceId,remote}); },
+    snapshot(){
+      // lastAction is a retry callback and cannot be passed to structuredClone.
+      return {board:structuredClone(board),selectedId,connectSourceId,remote:{...remote}};
+    },
     setBoard(next){ board=structuredClone(next); selectedId=null; connectSourceId=null; },
     setName(name){ board={...board,name}; },
     select(id){ selectedId=id; },
@@ -29,6 +45,13 @@ export function createBoardState(){
       board={...board,elements:board.elements.map(e=>e.id===selectedId && e.type!=='CONNECTOR'?{...e,x,y}:e)};
       return this.selected();
     },
+    updateSelectedText(text){
+      const current=this.selected();
+      if(!current || current.type==='CONNECTOR') return null;
+      const next={...current,text};
+      replaceElement(next);
+      return structuredClone(next);
+    },
     beginConnect(){ if(selectedId) connectSourceId=selectedId; },
     completeConnect(targetId){
       if(!connectSourceId || !targetId || connectSourceId===targetId) return null;
@@ -41,15 +64,49 @@ export function createBoardState(){
     removeSelected(){
       if(!selectedId) return null;
       const removed=selectedId;
-      board={...board,elements:board.elements.filter(e=>e.id!==removed && e.sourceId!==removed && e.targetId!==removed)};
+      removeElement(removed);
       selectedId=null;
       return removed;
     },
+    /**
+     * Applies an ACCEPTED BoardEvent as a pure state transition (no DOM access).
+     * Every case is idempotent, because the sender also receives its own accepted
+     * event after having applied it optimistically:
+     *   - CREATED / CONNECTOR_CREATED -> upsert by id
+     *   - MOVED                       -> set absolute x,y (applying twice = same result)
+     *   - UPDATED                     -> replace if present
+     *   - DELETED                     -> remove element + dependent connectors (no-op if absent)
+     * Returns true when the event belongs to the current Board and was applied.
+     */
     applyEvent(event){
-      // TODO LAB-06: make remote events a state transition, not a DOM mutation.
-      // Required cases: CREATE/CONNECTOR_CREATE, MOVE, UPDATE, DELETE.
-      // Applying the same final MOVE twice should not corrupt the Board.
-      throw new Error(`TODO LAB-06: apply ${event?.type ?? 'unknown'} event`);
+      if(!event || !event.type || !event.payload) return false;
+      if(!board.id || event.boardId!==board.id) return false; // session isolation guard
+      const p=event.payload;
+      switch(event.type){
+        case 'ELEMENT_CREATED':
+        case 'CONNECTOR_CREATED':
+          if(!p.element?.id) return false;
+          upsertElement(p.element);
+          return true;
+        case 'ELEMENT_MOVED': {
+          if(!p.elementId || typeof p.x!=='number' || typeof p.y!=='number') return false;
+          const target=board.elements.find(e=>e.id===p.elementId);
+          if(!target || target.type==='CONNECTOR') return false;
+          replaceElement({...target,x:p.x,y:p.y});
+          return true;
+        }
+        case 'ELEMENT_UPDATED':
+          if(!p.element?.id || !board.elements.some(e=>e.id===p.element.id)) return false;
+          replaceElement(p.element);
+          return true;
+        case 'ELEMENT_DELETED':
+          if(!p.elementId) return false;
+          removeElement(p.elementId);
+          return true;
+        default:
+          console.warn('Unknown BoardEvent type',event.type);
+          return false;
+      }
     },
     toPersistedBoard(){ return structuredClone(board); }
   };
