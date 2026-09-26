@@ -7,8 +7,8 @@ This repository implements **Lab #6: Real-Time Collaboration** for the ARSW cour
 | Person | Role | GitHub |
 |--------|------|--------|
 | Jhonatan David Madero | Persona 1 — Backend STOMP, tests, integration & delivery | [@jhonatanmadero](https://github.com/jhonatanmadero) |
-| [Nombre Compañero 2] | Persona 2 — Frontend real-time, JS tests, functional validation | [@usuario2](https://github.com/usuario2) |
-| [Nombre Compañero 3] | Persona 3 — Architecture diagrams, ADRs, AI declaration, evidence, README | [@usuario3](https://github.com/usuario3) |
+| Juan Sebastian Murcia | Persona 2 — Frontend real-time, JS tests, functional validation | [@usuario2](https://github.com/usuario2) |
+| Jhonatan Stiven Peña Mora | Persona 3 — Architecture diagrams, ADRs, AI declaration, evidence, README | [jhonatanpenamora] |
 
 ## What is already recovered from Lab #5
 
