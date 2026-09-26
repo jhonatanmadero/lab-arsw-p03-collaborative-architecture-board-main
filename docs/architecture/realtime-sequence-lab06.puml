@@ -1,0 +1,73 @@
+@startuml realtime-sequence-lab06
+skinparam sequenceMessageAlign center
+skinparam linetype ortho
+
+title Sequence Diagram — ELEMENT_MOVED from Browser A to Browser B (Lab #6)
+
+actor "User A" as userA
+actor "User B" as userB
+
+participant "Browser A:\nBoardView" as viewA
+participant "Browser A:\nBoardState" as stateA
+participant "Browser A:\nBoardRealtimeClient" as rtA
+participant "Browser A:\napp.js" as appA
+
+participant "STOMP Broker\n/SimpleBroker" as broker
+
+participant "Server:\nBoardWebSocketController" as wsCtrl
+participant "Server:\nBoardEventApplicationService" as eventSvc
+participant "Server:\nBoard (domain)" as board
+participant "Server:\nBoardRepository" as repo
+
+participant "Browser B:\nBoardRealtimeClient" as rtB
+participant "Browser B:\nBoardState" as stateB
+participant "Browser B:\nBoardView" as viewB
+participant "Browser B:\napp.js" as appB
+
+== Initial state: both browsers connected to same boardId ==
+
+note over rtA, rtB: SUBSCRIBE /topic/boards/{boardId}\nCONNECTED
+
+== User A drags rectangle and drops ==
+
+userA -> viewA: drag + drop (x=420, y=180)
+viewA -> appA: onMoveEnd(elementId, x, y)
+appA -> rtA: publish(BoardEvent<ELEMENT_MOVED>)
+rtA -> broker: SEND /app/boards/{id}/events\n{eventId, boardId, ELEMENT_MOVED, actorId, payload{elementId, x, y}}
+
+== Server processes event ==
+
+broker -> wsCtrl: handle(BoardEvent, session)
+wsCtrl -> eventSvc: apply(BoardEvent)
+eventSvc -> board: load from repo\napply event (move element)
+board -> eventSvc: updated Board
+eventSvc -> repo: save(Board)
+eventSvc -> wsCtrl: normalized BoardEvent (accepted)
+wsCtrl -> broker: convertAndSend /topic/boards/{id}\n{accepted event}
+
+== Broadcast to both browsers ==
+
+broker -> rtA: MESSAGE /topic/boards/{id}\n{accepted event}
+broker -> rtB: MESSAGE /topic/boards/{id}\n{accepted event}
+
+== Browser A receives own echo (idempotent) ==
+
+rtA -> appA: onEvent(accepted event)
+appA -> stateA: applyEvent(accepted event)
+stateA -> stateA: moveElement(elementId, x, y)  // idempotent
+stateA -> appA: updated BoardState
+appA -> viewA: render(updated state)
+
+== Browser B receives remote event ==
+
+rtB -> appB: onEvent(accepted event)
+appB -> stateB: applyEvent(accepted event)
+stateB -> stateB: moveElement(elementId, x, y)  // idempotent
+stateB -> appB: updated BoardState
+appB -> viewB: render(updated state)
+
+== Result ==
+
+note over viewA, viewB: Both browsers show rectangle at (420, 180)\nwithout full page reload
+
+@enduml
