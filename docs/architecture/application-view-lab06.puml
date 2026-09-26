@@ -1,0 +1,78 @@
+@startuml application-view-lab06
+!define RECTANGLE class
+
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+title ArchiMate Application View — Lab #6 Real-Time Collaboration
+
+package "Web Client (Browser)" {
+    [BoardView] as view
+    [BoardState] as state
+    [BoardRealtimeClient] as realtime
+    [BoardApiClient] as api
+    [app.js] as app
+}
+
+package "Server — REST API" {
+    [BoardRestController] as restCtrl
+    [BoardApplicationService] as boardAppSvc
+}
+
+package "Server — WebSocket/STOMP" {
+    [BoardWebSocketController] as wsCtrl
+    [BoardEventApplicationService] as eventAppSvc
+    [STOMP Broker\n/SimpleBroker] as broker
+}
+
+package "Application Services" {
+    [BoardApplicationService] as boardAppSvc2
+    [BoardEventApplicationService] as eventAppSvc2
+}
+
+package "Repository" {
+    [BoardRepository\n(InMemory)] as repo
+}
+
+package "Domain Model" {
+    [Board] as board
+    [BoardElement] as element
+    [BoardConnector] as connector
+}
+
+' Relationships with protocol labels
+view -[#0066CC,dashed]-> api : "HTTP/JSON\nGET /api/boards/{id}\nPOST /api/boards"
+view -[#0066CC,dashed]-> api : "HTTP/JSON\nPUT /api/boards/{id}"
+api -[#0066CC]-> restCtrl : "HTTP/JSON"
+
+realtime -[#CC6600]-> broker : "STOMP/WebSocket\nSUB /topic/boards/{id}"
+realtime -[#CC6600]-> broker : "STOMP/WebSocket\nSEND /app/boards/{id}/events"
+broker -[#CC6600]-> realtime : "STOMP/WebSocket\nMESSAGE /topic/boards/{id}"
+broker -[#CC6600]-> wsCtrl : "STOMP/WebSocket\n/app/boards/{id}/events"
+
+wsCtrl -[#CC6600]-> eventAppSvc : "Java call"
+eventAppSvc -[#CC6600]-> board : "apply(BoardEvent)"
+board -[#CC6600]-> eventAppSvc : "BoardEvent (normalized)"
+eventAppSvc -[#CC6600]-> repo : "save(Board)"
+repo -[#CC6600]-> eventAppSvc : "Board"
+eventAppSvc -[#CC6600]-> broker : "convertAndSend /topic/boards/{id}"
+
+restCtrl -[#0066CC]-> boardAppSvc : "Java call"
+boardAppSvc -[#0066CC]-> repo : "findById / save"
+repo -[#0066CC]-> boardAppSvc : "Board"
+
+app -[#000000]-> view : "render(BoardState)"
+app -[#000000]-> state : "applyEvent / getState"
+app -[#000000]-> realtime : "publish / onEvent"
+app -[#000000]-> api : "create / load / save"
+
+' Legend
+legend right
+|= Color |= Protocol |
+| <#0066CC> Blue | HTTP/JSON (REST) |
+| <#CC6600> Orange | STOMP/WebSocket (realtime) |
+| Black | In-process (Java/JS) |
+endlegend
+
+@enduml

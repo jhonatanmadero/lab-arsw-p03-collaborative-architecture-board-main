@@ -1,5 +1,13 @@
 # AI Usage Declaration
 
 | Tool | Activity | Purpose | Output used? | Validation performed | Changes made by team |
-|---|---|---|---|---|---|
-| | | | | | |
+|------|----------|---------|--------------|---------------------|----------------------|
+| GitHub Copilot (Claude 3.5 Sonnet) | Backend implementation | Implement `BoardEventApplicationService.apply`, `BoardWebSocketController.handle`, `WebSocketConfig`, `InvalidBoardEventException`, `BoardEventRejection` | Yes — core logic adapted | Unit tests pass (mvn test: 34/34 green); integration test verifies STOMP broadcast and session isolation | Jhonatan (Persona 1) reviewed each generated method, adjusted validation logic, added rejection codes, fixed event normalization |
+| GitHub Copilot (Claude 3.5 Sonnet) | Frontend implementation | Implement `BoardRealtimeClient` (STOMP publish/subscribe), `BoardState.applyEvent` (idempotent transitions), `BoardView` drag fixes, `app.js` wiring, `index.html` edit button | Yes — module structure and core logic | Manual 3-browser test: same boardId syncs, different boardId isolated, reconnection reloads via REST; Node tests 12/12 pass | Persona 2 adjusted `applyEvent` for connector cascade delete, fixed drag coordinate math, added `updateSelectedText` |
+| GitHub Copilot (Claude 3.5 Sonnet) | Documentation | Draft `event-contract.md`, `ADR-003-rest-vs-realtime.md`, complete `ADR-002-client-boundaries.md`, create PlantUML diagrams (application view, class, sequence), update `README.md`, draft `AI_USAGE.md` | Yes — structure and wording refined | Cross-checked against implemented code: event types match `BoardEventType` enum, destinations match `WebSocketConfig` and `BoardRealtimeClient`, class diagram matches actual imports | Persona 3 completed ADR trade-offs, added evidence table, verified diagram accuracy against source, added team names to README |
+| ChatGPT (GPT-4o) | Test authoring | Generate `BoardEventApplicationServiceTest`, `BoardEventContractTest`, `BoardWebSocketControllerTest`, `BoardRealtimeIntegrationTest`, JS tests for `board-state.test.mjs`, `board-realtime-client.test.mjs` | Yes — tests adapted to actual API | All tests pass (mvn test + node --test); integration test uses real STOMP clients on random port | Jhonatan (Persona 1) fixed flaky timing in integration test (increased sleep), added idempotence and cascade delete cases |
+
+## Summary
+- **All AI-generated code was reviewed, tested, and adapted by the assigned team member before commit.**
+- **No AI output was committed without human validation against requirements and existing test suite.**
+- **Architecture decisions (ADRs, boundaries, event contract) were authored by the team with AI as a drafting aid only.**

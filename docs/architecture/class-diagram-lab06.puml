@@ -1,0 +1,156 @@
+@startuml class-diagram-lab06
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+title Class Diagram — Lab #6 Real-Time Collaboration (Key Classes)
+
+package "Domain Model" {
+    class Board {
+        +boardId: String
+        +elements: Map<String, BoardElement>
+        +addElement(BoardElement)
+        +removeElement(String)
+        +moveElement(String, double, double)
+        +updateElement(BoardElement)
+        +getElement(String): BoardElement
+        +getConnectorsFor(String): List<BoardConnector>
+    }
+    
+    class BoardElement {
+        +id: String
+        +type: ElementType
+        +x: double
+        +y: double
+        +width: double
+        +height: double
+        +text: String
+        +sourceId: String
+        +targetId: String
+    }
+    
+    class ElementType {
+        +RECTANGLE
+        +TEXT
+        +CONNECTOR
+    }
+    
+    class BoardConnector {
+        +id: String
+        +sourceId: String
+        +targetId: String
+        +validate(Board): void
+    }
+    
+    Board *-- "0..*" BoardElement : elements
+    BoardElement -- ElementType : type
+    Board *-- "0..*" BoardConnector : connectors
+}
+
+package "Application Events" {
+    class BoardEvent {
+        +eventId: String
+        +boardId: String
+        +type: BoardEventType
+        +actorId: String
+        +occurredAt: Instant
+        +payload: BoardEventPayload
+    }
+    
+    class BoardEventType {
+        +ELEMENT_CREATED
+        +CONNECTOR_CREATED
+        +ELEMENT_MOVED
+        +ELEMENT_UPDATED
+        +ELEMENT_DELETED
+    }
+    
+    class BoardEventPayload {
+        +element: BoardElement
+        +elementId: String
+        +x: double
+        +y: double
+    }
+    
+    BoardEvent *-- BoardEventType : type
+    BoardEvent *-- BoardEventPayload : payload
+}
+
+package "Application Services" {
+    class BoardApplicationService {
+        +createBoard(): Board
+        +getBoard(String): Board
+        +saveBoard(Board): Board
+    }
+    
+    class BoardEventApplicationService {
+        +apply(BoardEvent): BoardEvent
+        -mapToDomain(BoardEvent): Board
+    }
+    
+    class InvalidBoardEventException {
+        +rejectionCode: RejectionCode
+    }
+    
+    enum RejectionCode {
+        INVALID_EVENT
+        BOARD_NOT_FOUND
+        ELEMENT_NOT_FOUND
+        INVALID_CONNECTOR
+    }
+}
+
+package "Infrastructure — Web (REST)" {
+    class BoardRestController {
+        +createBoard(): CreateBoardResponse
+        +getBoard(String): Board
+        +saveBoard(String, ReplaceBoardRequest): Board
+    }
+    
+    class CreateBoardRequest
+    class ReplaceBoardRequest
+    class CreateBoardResponse
+}
+
+package "Infrastructure — Web (WebSocket/STOMP)" {
+    class BoardWebSocketController {
+        +handle(BoardEvent, String): void
+    }
+    
+    class BoardEventRejection {
+        +eventId: String
+        +code: RejectionCode
+        +message: String
+    }
+    
+    class WebSocketConfig {
+        +registerStompEndpoints(StompEndpointRegistry)
+        +configureMessageBroker(MessageBrokerRegistry)
+    }
+}
+
+package "Infrastructure — Persistence" {
+    interface BoardRepository {
+        +save(Board): Board
+        +findById(String): Optional<Board>
+    }
+    
+    class InMemoryBoardRepository {
+        -boards: Map<String, Board>
+        +save(Board): Board
+        +findById(String): Optional<Board>
+    }
+    
+    BoardRepository <|.. InMemoryBoardRepository
+}
+
+' Relationships
+BoardApplicationService --> BoardRepository : uses
+BoardEventApplicationService --> BoardRepository : uses
+BoardEventApplicationService --> Board : creates/validates
+BoardEventApplicationService --> InvalidBoardEventException : throws
+BoardWebSocketController --> BoardEventApplicationService : delegates
+BoardWebSocketController --> BoardEventRejection : sends to /user/queue/errors
+BoardRestController --> BoardApplicationService : delegates
+WebSocketConfig --> BoardWebSocketController : registers
+
+@enduml
